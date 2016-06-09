@@ -33,6 +33,7 @@
 import os
 import sys
 import timeit
+import matplotlib.pyplot as plt
 
 import numpy as np
 
@@ -61,10 +62,10 @@ class SdA(object):
         self,
         numpy_rng,
         theano_rng=None,
-        n_ins=900,
-        hidden_layers_sizes=[200, 200],
-        n_outs=6,
-        corruption_levels=[0.35, 0.15, 0.01]
+        n_ins=None,
+        hidden_layers_sizes=None,
+        corruption_levels=None,
+        n_outs=None
     ):
         """ This class is made to support a variable number of layers.
 
@@ -209,12 +210,38 @@ class SdA(object):
         batch_begin = index * batch_size
         # ending of a batch given `index`
         batch_end = batch_begin + batch_size
+        
+        # organize np_train_sets
+        np_train_set_x = train_set_x.get_value(borrow=True).T
+        np_train_set_x = np.transpose(np_train_set_x.reshape(4, 900, np_train_set_x.shape[1]))
+
+        # test example patches
+        fig, axes = plt.subplots(ncols=4, nrows=1)
+        axes[0].imshow(np_train_set_x[0,:,0].reshape(30,30), cmap="Greys_r")
+        axes[1].imshow(np_train_set_x[0,:,1].reshape(30,30), cmap="Greys_r")
+        axes[2].imshow(np_train_set_x[0,:,2].reshape(30,30), cmap="Greys_r")
+        axes[3].imshow(np_train_set_x[0,:,3].reshape(30,30), cmap="Greys_r")
+        plt.show() 
+        
+        # substracted
+        data_x = [np_train_set_x[:,:,0],
+                  np_train_set_x[:,:,1]-np_train_set_x[:,:,0],
+                  np_train_set_x[:,:,2]-np_train_set_x[:,:,1],
+                  np_train_set_x[:,:,3]-np_train_set_x[:,:,2]]                  
+                  
 
         pretrain_fns = []
-        for dA in self.dA_layers:
+        for dA,kdA in zip(self.dA_layers, range(len(self.dA_layers))):
+            print(kdA,dA)
             # get the cost and the updates list
             cost, updates = dA.get_cost_updates(corruption_level,
                                                 learning_rate)
+                                                
+                                                
+            # or tuple data_x, data_y = data_xy        
+            shared_x = theano.shared(np.asarray(data_x[kdA],
+                                            dtype=theano.config.floatX),
+                                            borrow=True)
             # compile the theano function
             fn = theano.function(
                 inputs=[
@@ -225,7 +252,7 @@ class SdA(object):
                 outputs=cost,
                 updates=updates,
                 givens={
-                    self.x: train_set_x[batch_begin: batch_end]
+                    self.x: shared_x[batch_begin: batch_end]
                 }
             )
             # append `fn` to the list of functions
@@ -257,7 +284,52 @@ class SdA(object):
         (train_set_x, train_set_y) = datasets[0]
         (valid_set_x, valid_set_y) = datasets[1]
         (test_set_x, test_set_y) = datasets[2]
+        
+        # organize np_train_sets
+        np_train_set_x = train_set_x.get_value(borrow=True).T
+        np_train_set_x = np.transpose(np_train_set_x.reshape(4, 900, np_train_set_x.shape[1]))
+        # organize np_valid_set_x
+        np_valid_set_x = valid_set_x.get_value(borrow=True).T
+        np_valid_set_x = np.transpose(np_valid_set_x.reshape(4, 900, np_valid_set_x.shape[1]))
+        # organize np_test_set_x
+        np_test_set_x = test_set_x.get_value(borrow=True).T
+        np_test_set_x = np.transpose(np_test_set_x.reshape(4, 900, np_test_set_x.shape[1]))
 
+        # test example patches
+        fig, axes = plt.subplots(ncols=4, nrows=3)
+        # train case
+        axes[0,0].imshow(np_train_set_x[0,:,0].reshape(30,30), cmap="Greys_r")
+        axes[0,1].imshow(np_train_set_x[0,:,1].reshape(30,30), cmap="Greys_r")
+        axes[0,2].imshow(np_train_set_x[0,:,2].reshape(30,30), cmap="Greys_r")
+        axes[0,3].imshow(np_train_set_x[0,:,3].reshape(30,30), cmap="Greys_r")
+        # a valid case
+        axes[1,0].imshow(np_valid_set_x[0,:,0].reshape(30,30), cmap="Greys_r")
+        axes[1,1].imshow(np_valid_set_x[0,:,1].reshape(30,30), cmap="Greys_r")
+        axes[1,2].imshow(np_valid_set_x[0,:,2].reshape(30,30), cmap="Greys_r")
+        axes[1,3].imshow(np_valid_set_x[0,:,3].reshape(30,30), cmap="Greys_r")
+        # a test case
+        axes[2,0].imshow(np_test_set_x[0,:,0].reshape(30,30), cmap="Greys_r")
+        axes[2,1].imshow(np_test_set_x[0,:,1].reshape(30,30), cmap="Greys_r")
+        axes[2,2].imshow(np_test_set_x[0,:,2].reshape(30,30), cmap="Greys_r")
+        axes[2,3].imshow(np_test_set_x[0,:,3].reshape(30,30), cmap="Greys_r")
+        plt.show() 
+        
+        # substracted
+        train_data_x = np_train_set_x[:,:,3]
+        valid_data_x = np_valid_set_x[:,:,3]
+        test_data_x = np_test_set_x[:,:,3]
+                  
+        # or tuple data_x, data_y = data_xy        
+        train_set_x = theano.shared(np.asarray(train_data_x,
+                                            dtype=theano.config.floatX),
+                                            borrow=True)                   
+        valid_set_x = theano.shared(np.asarray(valid_data_x,
+                                            dtype=theano.config.floatX),
+                                            borrow=True)     
+        test_set_x = theano.shared(np.asarray(test_data_x,
+                                            dtype=theano.config.floatX),
+                                            borrow=True)                                            
+                  
         # compute number of minibatches for training, validation and testing
         n_valid_batches = valid_set_x.get_value(borrow=True).shape[0]
         n_valid_batches //= batch_size

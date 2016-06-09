@@ -7,25 +7,29 @@ Created on Thu Jun 02 12:50:36 2016
 
 from DLFuncs_SdA import *
     
-def run_testSdA_subs():
+def run_testSdA_timep():
     # start by importing Deep Learning Funcs
     funcs = DLFuncs_SdA()
     
     pretraining_epochs = 100
-    pretrain_lr = 0.0025
-    finetune_lr = 0.095
+    pretrain_lr = 0.45
+    batch_size = 500
     
     training_epochs = 1000
-    batch_size = 2
+    finetune_lr = 0.075    
     
-    output_folder = 'plots/SdA_plots_subs'
-    corruption_levels=[0.05, 0.15, 0.25]
+    output_folder = 'SdA_plots_subs'
+    corruption_levels=[0.30, 0.4, 0.50, 0.60]
+    hidden_layers_sizes=[2025,1600,1225,900]
+    hidden_layers_sidelen = [30,45,40,35,30]
     
     ############
     # train Stacked dAutoencoder                 
     ############
-    dfpredata, dfinedata = funcs.test_SdA(finetune_lr, pretraining_epochs, pretrain_lr, training_epochs, batch_size, corruption_levels, output_folder)
-     
+    dfpredata, dfinedata = funcs.test_SdA_timep(pretraining_epochs, pretrain_lr, batch_size,
+                                                training_epochs, finetune_lr, 
+                                                corruption_levels, 
+                                                hidden_layers_sizes, hidden_layers_sidelen, output_folder)
     ############
     ### plotting or cost
     ### the cost we minimize during training is the negative log likelihood of
@@ -58,4 +62,4 @@ def run_testSdA_subs():
 
    
 if __name__ == '__main__':
-    run_testSdA_subs()
+    run_testSdA_timep()

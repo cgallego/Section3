@@ -89,7 +89,127 @@ class DLFuncs_SdA(object):
         # ``shared_y`` we will have to cast it to int. This little hack
         # lets ous get around this issue
         return shared_x, T.cast(shared_y, 'int32')
+ 
+    
+    def load_wUdata(self, traindata_path, labeldata_path, trainUdata_path)       :
+        ''' Loads the datasets incuding Unlabeled data
+    
+        :type dataset: string
+        :param data_path: the path to the dataset 
+        '''
+        data_dir, data_file = os.path.split(traindata_path)
+
+        print('... loading data')
+
+        # Load the dataset
+        with gzip.open(traindata_path, 'rb') as f:
+            try:
+                datasets = pickle.load(f, encoding='latin1')
+            except:
+                datasets = pickle.load(f)
         
+        # Load the Udataset
+        with gzip.open(trainUdata_path, 'rb') as f:
+            try:
+                Udatasets = pickle.load(f, encoding='latin1')
+            except:
+                Udatasets = pickle.load(f)
+    
+        with gzip.open(labeldata_path, 'rb') as f:
+            try:
+                labels = pickle.load(f, encoding='latin1')
+            except:
+                labels = pickle.load(f)
+        
+        print(labels.describe()) 
+        
+        # Assign labels as 1 if Enhancement, 0 if not enhancement
+        LandUlabels = np.concatenate( (np.ones(len(datasets)), np.zeros(len(Udatasets))) )
+        Ulabels = np.zeros(len(Udatasets))
+        LandUmergedata = []
+        LandUmergedata = datasets + Udatasets
+
+        #############
+        ## RANDOMIZE data into 3 groups: Train, valid, train, by unique lesion_id  
+        #############
+        uids = np.unique(labels['lesion_id'])
+        randuids = self.randomList(list(uids))
+        
+        lentrain = int(round(len(randuids)*0.6))
+        lenvalid = int(round(len(randuids)*0.2))
+        lentest = int(round(len(randuids)*0.2))
+        
+        # split ids based on random choice in 60% train, 20% valid and 20% test
+        idstrain = [randuids[i] for i in range(lentrain)]
+        idsvalid = [randuids[i] for i in range(lentrain,(lentrain+lenvalid))]
+        idstest = [randuids[i] for i in range(lentrain+lenvalid,len(randuids))]
+        
+        
+        randuidsU = self.randomList(list(range(len(Udatasets))))
+        lentrainU = int(round(len(randuidsU)*0.6))
+        lenvalidU = int(round(len(randuidsU)*0.2))
+        lentestU = int(round(len(randuidsU)*0.2))
+        
+        # split ids based on random choice in 60% train, 20% valid and 20% test
+        inxstrain = randuidsU[0:lentrainU]
+        inxvalid = randuidsU[lentrainU:lentrainU+lenvalidU]
+        inxtest = randuidsU[lentrainU+lenvalidU::] 
+
+        # make sure data_x elements are all 30*30*4 = 3600 if not remove patch
+        ptsize = LandUmergedata[0].shape[0]
+        # find index element different from ptsize
+        sizes=[(k,elem.shape[0]) for elem,k in zip(LandUmergedata,range(len(LandUmergedata))) if elem.shape[0] != ptsize]
+        # mark those indexes to exclude        
+        remindx = [int(pindx[0]) for pindx in sizes]        
+        print("Removing incomplete patches...")
+        print(remindx)
+        
+        # assign each id to bucket
+        traindata = []; validdata = []; testdata = [];
+        trainlabel = []; validlabel = []; testlabel = []; 
+        
+        # process Labeled data
+        for i in range(len(labels)):
+            if i not in remindx:
+                if labels.iloc[i]['lesion_id'] in idstrain:
+                    traindata.append(datasets[i])
+                    trainlabel.append(LandUlabels[i])
+                
+                if labels.iloc[i]['lesion_id'] in idsvalid:
+                    validdata.append(datasets[i])
+                    validlabel.append(LandUlabels[i])
+                    
+                if labels.iloc[i]['lesion_id'] in idstest:
+                    testdata.append(datasets[i])
+                    testlabel.append(LandUlabels[i])
+                    
+        # process Un-Labeled data
+        for i in range(len(Udatasets)):
+            if i in inxstrain:
+                traindata.append(Udatasets[i])
+                trainlabel.append(Ulabels[i])
+            
+            if i in inxvalid:
+                validdata.append(Udatasets[i])
+                validlabel.append(Ulabels[i])
+                
+            if i in inxtest:
+                testdata.append(Udatasets[i])
+                testlabel.append(Ulabels[i])
+
+        #############
+        # CONVERT to theano shared vars
+        #############
+        train_set_x, train_set_y = self.shared_dataset(traindata, trainlabel)
+        valid_set_x, valid_set_y = self.shared_dataset(validdata, validlabel)
+        test_set_x, test_set_y = self.shared_dataset(testdata, testlabel)
+    
+        rval = [(train_set_x, train_set_y), (valid_set_x, valid_set_y),
+                (test_set_x, test_set_y)]
+            
+        return rval
+        
+
         
     def load_data(self, traindata_path, labeldata_path):
         ''' Loads the dataset
@@ -242,9 +362,10 @@ class DLFuncs_SdA(object):
         return rval
         
 
-    def test_SdA(self, finetune_lr=0.1, pretraining_epochs=15,
-             pretrain_lr=0.001, training_epochs=1000,
-             batch_size=1, corruption_levels=[0.35, 0.35, 0.1], output_folder= 'plots/SdA_plots'):
+    def test_SdA_timep(self, pretraining_epochs, pretrain_lr, batch_size,
+                        training_epochs, finetune_lr,  
+                        corruption_levels, 
+                        hidden_layers_sizes, hidden_layers_sidelen, output_folder):
         """
         Demonstrates how to train and test a stochastic denoising autoencoder.
         
@@ -296,9 +417,9 @@ class DLFuncs_SdA(object):
         sda = SdA(
             numpy_rng=numpy_rng,
             n_ins = 30*30,
-            hidden_layers_sizes=[625, 625, 625],
-            corruption_levels=[0.35, 0.15, 0.1],
-            n_outs=6
+            hidden_layers_sizes=hidden_layers_sizes,
+            corruption_levels=corruption_levels,
+            n_outs=2
         )
 
         #########################
@@ -336,17 +457,12 @@ class DLFuncs_SdA(object):
             # Plot images in 2D
             #####################################   
             Xtmp = sda.dA_layers[i].W.get_value(borrow=True).T
-            if i == 0:
-                imgX = Xtmp.reshape( Xtmp.shape[0], 30, 30)
-                image = Image.fromarray(
-                    tile_raster_images(X=imgX , img_shape=(30, 30), tile_shape=(10, 10),
-                                       tile_spacing=(1, 1)))
-            else:
-                imgX = Xtmp.reshape( Xtmp.shape[0], 25, 25)
-                image = Image.fromarray(
-                    tile_raster_images(X=imgX , img_shape=(25, 25), tile_shape=(10, 10),
-                                       tile_spacing=(1, 1)))
-                
+            imgX = Xtmp.reshape( Xtmp.shape[0], hidden_layers_sidelen[i], hidden_layers_sidelen[i])
+            image = Image.fromarray(
+                tile_raster_images(X=imgX , img_shape=(hidden_layers_sidelen[i], hidden_layers_sidelen[i]), 
+                                   tile_shape=(10, 10),
+                                   tile_spacing=(1, 1)))
+
             #show and save                     
             image.save('filters_corruption_layer_'+str(i)+'_'+str(float(corruption_levels[i]))+'.png')
             # prepare display    
@@ -366,40 +482,9 @@ class DLFuncs_SdA(object):
         ###############
         ## Visualize second layer filter by Lee et al. method
         ###############
-        W1=sda.dA_layers[0].W.get_value(borrow=True).T
-        W2=sda.dA_layers[1].W.get_value(borrow=True).T
-        plt.imshow(W2, cmap="Greys_r")
-        #W1=W1.reshape(100,30,30)
         
-        Xtests_batches = test_set_x.get_value(borrow=True)
-        aXtest = Xtests_batches[0,:]
-        plt.imshow(aXtest.reshape(30,30), cmap="Greys_r")
         
-        argSig = np.dot(W1, aXtest)
-        plt.imshow(argSig.reshape(25,25), cmap="Greys_r")
-
-        def sigmoid(x):
-          return 1 / (1 + np.exp(-x))
-          
-        his = []
-        hiSig = sigmoid(argSig)
-        plt.imshow(hiSig.reshape(25,25), cmap="Greys_r")
-
-        fig, ax = plt.subplots(ncols=25,nrows=25)
-        k=0
-        for i in range(25):
-            for j in range(25):
-                his.append(np.dot(np.transpose(W2[k,:]),hiSig))
-                # weight the correspoding layer 2 filter
-                imgW2 = np.dot(np.transpose(W2[k,:]),hiSig)*W2[k,:]
-                ax[i,j].imshow(imgW2.reshape(25,25), cmap="Greys_r")
-                ax[i,j].axes.get_xaxis().set_visible(False)
-                ax[i,j].axes.get_yaxis().set_visible(False)
-                k+=1
         
-        dfhs = pd.DataFrame( his )
-        dfhs.columns = ['his']
-        dfhs.describe()
 
         ##############
         # Format      
@@ -520,397 +605,4 @@ class DLFuncs_SdA(object):
         return [dfpredata, dfinedata]
     
     
-    
-    def test_rbm(self, learning_rate=0.1, training_epochs=15,
-             batch_size=20,
-             n_chains=20, n_samples=10, output_folder='rbm_plots',
-             n_hidden=500):
-        """
-        Demonstrate how to train and afterwards sample from it using Theano.
-        
-        :param learning_rate: learning rate used for training the RBM
-    
-        :param training_epochs: number of epochs used for training
-        
-        :param batch_size: size of a batch used to train the RBM
-    
-        :param n_chains: number of parallel Gibbs chains to be used for sampling
-    
-        :param n_samples: number of samples to plot for each chain
-    
-        """
-        traindata_path='Z://Cristina//Section3//DeepLearning//allLpatches.pklz'
-        labeldata_path='Z://Cristina//Section3//DeepLearning//allLabels.pklz'
-        
-        #############
-        ## LOAD datasets
-        #############
-        datasets = self.load_data(traindata_path, labeldata_path)
-    
-        train_set_x, train_set_y = datasets[0]
-        test_set_x, test_set_y = datasets[2]
-    
-        # compute number of minibatches for training, validation and testing
-        n_train_batches = train_set_x.get_value(borrow=True).shape[0] // batch_size
-    
-        # allocate symbolic variables for the data
-        index = T.lscalar()    # index to a [mini]batch
-        x = T.matrix('x')  # the data is presented as rasterized images
-    
-        rng = np.random.RandomState(123)
-        theano_rng = RandomStreams(rng.randint(2 ** 30))
-    
-        # initialize storage for the persistent chain (state = hidden
-        # layer of chain)
-        persistent_chain = theano.shared(np.zeros((batch_size, n_hidden),
-                                                     dtype=theano.config.floatX),
-                                         borrow=True)
-    
-        # construct the RBM class
-        rbm = RBM(input=x, n_visible=4*30*30,
-                  n_hidden=n_hidden, numpy_rng=rng, theano_rng=theano_rng)
-    
-        # get the cost and the gradient corresponding to one step of CD-15
-        cost, updates = rbm.get_cost_updates(lr=learning_rate,
-                                             persistent=persistent_chain, k=15)
-    
-        #################################
-        #     Training the RBM          #
-        #################################
-        if not os.path.isdir(output_folder):
-            os.makedirs(output_folder)
-        os.chdir(output_folder)
-    
-        # it is ok for a theano function to have no output
-        # the purpose of train_rbm is solely to update the RBM parameters
-        train_rbm = theano.function(
-            [index],
-            cost,
-            updates=updates,
-            givens={
-                x: train_set_x[index * batch_size: (index + 1) * batch_size]
-            },
-            name='train_rbm'
-        )
-    
-        plotting_time = 0.
-        start_time = timeit.default_timer()
-    
-        # go through training epochs
-        for epoch in range(training_epochs):
-            # go through the training set
-            mean_cost = []
-            for batch_index in range(n_train_batches):
-                mean_cost += [train_rbm(batch_index)]
-    
-            print('Training epoch %d, cost is ' % epoch, np.mean(mean_cost))
-    
-            # Plot filters after each training epoch
-            plotting_start = timeit.default_timer()
-            
-            # Construct image from the weight matrix
-            Xtmp = rbm.W.get_value(borrow=True).T
-            imgX = Xtmp.reshape( Xtmp.shape[0], 4, 30, 30)
-            imgX0 = imgX[:,0,:,:]
-            image = Image.fromarray(
-                tile_raster_images(X=imgX0 , img_shape=(30, 30), tile_shape=(10, 10),
-                                   tile_spacing=(1, 1)))
-                                   
-           
-            image.save('filters_at_epoch_%i.png' % epoch)
-            # prepare display    
-            fig, ax = plt.subplots()  
-            ax.imshow(image,  cmap="Greys_r")
-            ax.axes.get_xaxis().set_visible(False)
-            ax.axes.get_yaxis().set_visible(False)
-            
-            plotting_stop = timeit.default_timer()
-            plotting_time += (plotting_stop - plotting_start)
-    
-        end_time = timeit.default_timer()
-    
-        pretraining_time = (end_time - start_time) - plotting_time
-    
-        print ('Training took %f minutes' % (pretraining_time / 60.))
-
-
-        #################################
-        #     Sampling from the RBM     #
-        #################################
-        # find out the number of test samples
-        number_of_test_samples = test_set_x.get_value(borrow=True).shape[0]
-    
-        # pick random test examples, with which to initialize the persistent chain
-        test_idx = rng.randint(number_of_test_samples - n_chains)
-        persistent_vis_chain = theano.shared(
-            np.asarray(
-                test_set_x.get_value(borrow=True)[test_idx:test_idx + n_chains],
-                dtype=theano.config.floatX
-            )
-        )
-        
-        plot_every = 1000
-        # define one step of Gibbs sampling (mf = mean-field) define a
-        # function that does `plot_every` steps before returning the
-        # sample for plotting
-        (
-            [   presig_hids,
-                hid_mfs,
-                hid_samples,
-                presig_vis,
-                vis_mfs,
-                vis_samples
-            ],
-            updates
-        ) = theano.scan(
-            rbm.gibbs_vhv,
-            outputs_info=[None, None, None, None, None, persistent_vis_chain],
-            n_steps=plot_every
-        )
-    
-        # add to updates the shared variable that takes care of our persistent
-        # chain :.
-        updates.update({persistent_vis_chain: vis_samples[-1]})
-        # construct the function that implements our persistent chain.
-        # we generate the "mean field" activations for plotting and the actual
-        # samples for reinitializing the state of our persistent chain
-        sample_fn = theano.function(
-            [],
-            [
-                vis_mfs[-1],
-                vis_samples[-1]
-            ],
-            updates=updates,
-            name='sample_fn'
-        )
-    
-        # create a space to store the image for plotting ( we need to leave
-        # room for the tile_spacing as well)
-        image_data = np.zeros(
-            (31 * n_samples + 1, 31 * n_chains - 1),
-            dtype='uint8'
-        )
-        for idx in range(n_samples):
-            # generate `plot_every` intermediate samples that we discard,
-            # because successive samples in the chain are too correlated
-            vis_mf, vis_sample = sample_fn()
-            
-            # format
-            avis_mf = vis_mf.reshape(n_chains, 4, 900)
-            aimg = avis_mf[:,0,:]
-            
-            print(' ... plotting sample %d' % idx)
-            image_data[30 * idx:30 * idx + 30, :] = tile_raster_images(
-                X=aimg,
-                img_shape=(30, 30),
-                tile_shape=(1, n_chains),
-                tile_spacing=(1, 1)
-            )
-    
-        # construct image
-        image = Image.fromarray(image_data)
-        image.save('samples.png')
-
-        os.chdir('../')
-        
-        return
-
-
-    def test_DBN(self, nhidden=1024, filtsize=12, finetune_lr=0.1, pretraining_epochs=100,
-             pretrain_lr=0.01, k=1, training_epochs=1000,
-             batch_size=10, plots_folder='dbn_plots'):
-        """
-        Demonstrates how to train and test a Deep Belief Network.
-    
-        This is demonstrated on MNIST.
-    
-        :type finetune_lr: float
-        :param finetune_lr: learning rate used in the finetune stage
-        :type pretraining_epochs: int
-        :param pretraining_epochs: number of epoch to do pretraining
-        :type pretrain_lr: float
-        :param pretrain_lr: learning rate to be used during pre-training
-        
-        :type k: int
-        :param k: number of Gibbs steps in CD/PCD
-        :type training_epochs: int
-        :param training_epochs: maximal number of iterations ot run the optimizer
-        :type batch_size: int
-        :param batch_size: the size of a minibatch
-        """
-    
-        traindata_path='Z://Cristina//Section3//DeepLearning//allLpatches.pklz'
-        labeldata_path='Z://Cristina//Section3//DeepLearning//allLabels.pklz'
-        
-        #############
-        ## LOAD datasets
-        #############
-        datasets = self.load_data(traindata_path, labeldata_path)
-    
-        train_set_x, train_set_y = datasets[0]
-        valid_set_x, valid_set_y = datasets[1]
-        test_set_x, test_set_y = datasets[2]
-    
-        # compute number of minibatches for training, validation and testing
-        n_train_batches = train_set_x.get_value(borrow=True).shape[0] / batch_size
-    
-        # numpy random generator
-        numpy_rng = np.random.RandomState(123)
-        
-        print '... building the model'
-        # construct the Deep Belief Network
-        dbn = DBN(numpy_rng=numpy_rng, 
-                  n_ins=4*30*30,
-                  hidden_layers_sizes=[nhidden, nhidden, nhidden],
-                  n_outs=6)
-    
-        #########################
-        # PRETRAINING THE MODEL #
-        #########################
-        if not os.path.isdir(plots_folder):
-            os.makedirs(plots_folder)
-        os.chdir(plots_folder)
-        
-        print '... getting the pretraining functions'
-        pretraining_fns = dbn.pretraining_functions(train_set_x=train_set_x,
-                                                    batch_size=batch_size,
-                                                    k=k)
-    
-        print '... pre-training the model'
-        start_time = timeit.default_timer()
-        
-        ## Pre-train layer-wise
-        for i in range(dbn.n_layers):
-            # go through pretraining epochs
-            for epoch in range(pretraining_epochs):
-                # go through the training set
-                c = []
-                for batch_index in range(n_train_batches):
-                    c.append(pretraining_fns[i](index=batch_index,
-                                                lr=pretrain_lr))
-                                                
-                print 'Pre-training layer %i, epoch %d, cost ' % (i, epoch),
-                print numpy.mean(c)
-                
-                # Plot filters after each dbn.n_layers                
-                # Construct image from the weight matrix
-                Xtmp = dbn.rbm_layers[i].W.get_value(borrow=True).T
-                if(i==0):
-                    imgX = Xtmp.reshape( Xtmp.shape[0], 4, 30, 30)
-                    imgX0 = imgX[:,0,:,:]
-                    image = Image.fromarray(
-                        tile_raster_images(X=imgX0 , img_shape=(30, 30), tile_shape=(10, 10),
-                                       tile_spacing=(1, 1)))
-                if(i>0):
-                    imgX = Xtmp.reshape( Xtmp.shape[0], 4, filtsize, filtsize)
-                    imgX0 = imgX[:,0,:,:]
-                    image = Image.fromarray(
-                        tile_raster_images(X=imgX0 , img_shape=(filtsize, filtsize), tile_shape=(10, 10),
-                                       tile_spacing=(1, 1)))
-                
-                                      
-                image.save('filters_layer%i_epoch%i.png' % (i, epoch))
-#                # prepare display    
-#                fig, ax = plt.subplots()  
-#                ax.imshow(image,  cmap="Greys_r")
-#                ax.axes.get_xaxis().set_visible(False)
-#                ax.axes.get_yaxis().set_visible(False)
-    
-        end_time = timeit.default_timer()
-
-        print('The pretraining code for file ' +
-                              os.path.split(__file__)[1] +
-                              ' ran for %.2fm' % ((end_time - start_time) / 60.))
-                              
-                              
-        ########################
-        # FINETUNING THE MODEL #
-        ########################
-        # get the training, validation and testing function for the model
-        print '... getting the finetuning functions'
-        train_fn, validate_model, test_model = dbn.build_finetune_functions(
-            datasets=datasets,
-            batch_size=batch_size,
-            learning_rate=finetune_lr
-        )
-    
-        print '... finetuning the model'
-        
-        # early-stopping parameters
-        patience = 4 * n_train_batches  # look as this many examples regardless
-        patience_increase = 2.    # wait this much longer when a new best is
-                                  # found
-        improvement_threshold = 0.995  # a relative improvement of this much is
-                                       # considered significant
-        validation_frequency = min(n_train_batches, patience / 2)
-                                      # go through this many
-                                      # minibatches before checking the network
-                                      # on the validation set; in this case we
-                                      # check every epoch
-    
-        best_validation_loss = numpy.inf
-        test_score = 0.
-        start_time = timeit.default_timer()
-    
-        done_looping = False
-        epoch = 0
-    
-        while (epoch < training_epochs) and (not done_looping):
-            epoch = epoch + 1
-            for minibatch_index in range(n_train_batches):
-    
-                minibatch_avg_cost = train_fn(minibatch_index)
-                iter = (epoch - 1) * n_train_batches + minibatch_index
-    
-                if (iter + 1) % validation_frequency == 0:
-    
-                    validation_losses = validate_model()
-                    this_validation_loss = numpy.mean(validation_losses)
-                    print(
-                        'epoch %i, minibatch %i/%i, validation error %f %%'
-                        % (
-                            epoch,
-                            minibatch_index + 1,
-                            n_train_batches,
-                            this_validation_loss * 100.
-                        )
-                    )
-    
-                    # if we got the best validation score until now
-                    if this_validation_loss < best_validation_loss:
-    
-                        #improve patience if loss improvement is good enough
-                        if (
-                            this_validation_loss < best_validation_loss *
-                            improvement_threshold
-                        ):
-                            patience = max(patience, iter * patience_increase)
-    
-                        # save best validation score and iteration number
-                        best_validation_loss = this_validation_loss
-                        best_iter = iter
-    
-                        # test it on the test set
-                        test_losses = test_model()
-                        test_score = numpy.mean(test_losses)
-                        print(('     epoch %i, minibatch %i/%i, test error of '
-                               'best model %f %%') %
-                              (epoch, minibatch_index + 1, n_train_batches,
-                               test_score * 100.))
-    
-                if patience <= iter:
-                    done_looping = True
-                    break
-    
-        end_time = timeit.default_timer()
-        print(
-            (
-                'Optimization complete with best validation score of %f %%, '
-                'obtained at iteration %i, '
-                'with test performance %f %%'
-            ) % (best_validation_loss * 100., best_iter + 1, test_score * 100.)
-        )
-        print('The fine tuning code for file ' +
-                              os.path.split(__file__)[1] +
-                              ' ran for %.2fm' % ((end_time - start_time)/ 60.))
-  
+ 
