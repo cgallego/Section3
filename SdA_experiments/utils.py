@@ -9,6 +9,16 @@ image from a set of samples or weights.
 import numpy
 
 
+def makeMultiClass(y):
+    u = numpy.unique(y)
+    coords = {}
+    for idx in range(len(u)):
+        coords[str(u[idx])] = idx
+    V = numpy.zeros((len(y), len(u)))
+    for idx in range(len(y)):
+        V[idx, coords[str(y[idx])]] = 1
+    return V
+    
 def scale_to_unit_interval(ndar, eps=1e-8):
     """ Scales all values in the ndarray ndar to be between 0 and 1 """
     ndar = ndar.copy()

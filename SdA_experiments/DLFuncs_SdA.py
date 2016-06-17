@@ -35,6 +35,7 @@ from LogisticRegression import *
 from MultilayerPerceptron import *
 from dAutoencoder import *
 from StackeddAutoencoder import *
+import utils
 
 from utils import tile_raster_images
 try:
@@ -204,8 +205,12 @@ class DLFuncs_SdA(object):
         valid_set_x, valid_set_y = self.shared_dataset(validdata, validlabel)
         test_set_x, test_set_y = self.shared_dataset(testdata, testlabel)
     
-        rval = [(train_set_x, train_set_y), (valid_set_x, valid_set_y),
-                (test_set_x, test_set_y)]
+        rval = [(train_set_x, train_set_y), 
+                (valid_set_x, valid_set_y),
+                (test_set_x, test_set_y),
+                (traindata, trainlabel),
+                (validdata, validlabel),
+                (testdata, testlabel)]
             
         return rval
         
@@ -397,9 +402,12 @@ class DLFuncs_SdA(object):
         datasets = self.load_wUdata(traindata_path, labeldata_path, trainUdata_path)
         
         train_set_x, train_set_y = datasets[0]
+        np_train_x, np_train_y = datasets[3]
         valid_set_x, valid_set_y = datasets[1]
+        np_valid_x, np_valid_y = datasets[4]        
         test_set_x, test_set_y = datasets[2]
-    
+        np_test_x, np_test_y = datasets[5]
+        
         # compute number of minibatches for training, validation and testing
         n_train_batches = train_set_x.get_value(borrow=True).shape[0]
         n_train_batches //= batch_size
@@ -431,6 +439,7 @@ class DLFuncs_SdA(object):
         
         print('... getting the pretraining functions')
         pretraining_fns = sda.pretraining_functions(train_set_x=train_set_x,
+                                                    np_train_y=np_train_y,
                                                     batch_size=batch_size)
     
         print('... pre-training the model')
@@ -439,19 +448,27 @@ class DLFuncs_SdA(object):
         ## Pre-train layer-wise
         for i in range(sda.n_layers):
             # go through pretraining epochs
+            meanc = []
             for epoch in range(pretraining_epochs):
                 # go through the training set
-                c = []
+                c = []; 
                 for batch_index in range(n_train_batches):
                     c.append(pretraining_fns[i](index=batch_index,
                              corruption=corruption_levels[i],
                              lr=pretrain_lr))
-            
+                
                 # append      
                 dA_avg_costs.append(  np.mean(c) )
                 dA_iter.append(epoch)
                 layer_i.append(i)
                 print('Pre-training layer %i, epoch %d, cost %f' % (i, epoch, np.mean(c)))
+                
+                # check that Cost does not improve more than 1% on the training set after an epoch 
+                meanc.append( np.mean(c) )
+                if (epoch > 50):
+                    decrCost = (meanc[epoch-1] - meanc[epoch])/meanc[epoch]*100
+                    if(decrCost <= 0.1):
+                        break
     
             #####################################
             # Plot images in 2D
@@ -478,13 +495,6 @@ class DLFuncs_SdA(object):
             os.path.split(__file__)[1] +
                 ' ran for %.2fm' % ((end_time - start_time) / 60.)))
 
-        
-        ###############
-        ## Visualize second layer filter by Lee et al. method
-        ###############
-        
-        
-        
 
         ##############
         # Format      
@@ -529,7 +539,7 @@ class DLFuncs_SdA(object):
                                       # on the validation set; in this case we
                                       # check every epoch
     
-        best_validation_loss = numpy.inf
+        best_validation_loss = np.inf
         test_score = 0.
         start_time = timeit.default_timer()
     
@@ -601,8 +611,86 @@ class DLFuncs_SdA(object):
         dfinedata.columns = ['LL_iter']
         dfinedata['iter'] = LLiter
         dfinedata['loss'] = LLoss
+        
+        
+        ###############
+        ## Predictions
+        ###############
+        # get training data in numpy format   
+        # get training data in numpy format   
+        X,y = datasets[3]
+        Xtrain = np.asarray(X)
+        # extract one img
+        Xtrain = Xtrain.reshape(Xtrain.shape[0], 4, 900)
+        Xtrain = Xtrain[:,0,:]
+        ytrain = utils.makeMultiClass(y)
+        # get valid data in numpy format   
+        X,y = datasets[4]
+        Xvalid = np.asarray(X)
+        # extract one img
+        Xvalid = Xvalid.reshape(Xvalid.shape[0], 4, 900)
+        Xvalid = Xvalid[:,0,:]
+        yvalid = utils.makeMultiClass(y)
+        X,y = datasets[5]
+        Xtest = np.asarray(X)
+        # extract one img
+        Xtest = Xtest.reshape(Xtest.shape[0], 4, 900)
+        Xtest = Xtest[:,0,:]
+        ytest = utils.makeMultiClass(y)
+        
+        ###############
+        # predicting using the SDA
+        ###############
+        # in train
+        pred = sda.predict_functions(Xtrain).argmax(1)
+        # let's see how the network did
+        y = ytrain.argmax(1)
+        e0 = 0.0; y0 = len([0 for yi in range(len(y)) if y[yi]==0])
+        e1 = 0.0; y1 = len([1 for yi in range(len(y)) if y[yi]==1])
+        for i in range(len(y)):
+            if(y[i] == 1):
+                e1 += y[i]==pred[i]
+            if(y[i] == 0):
+                e0 += y[i]==pred[i]
+
+        # printing the result, this structure should result in 80% accuracy
+        print "Train Accuracy for class 0: %2.2f%%"%(100*e0/y0)
+        print "Train Accuracy for class 1: %2.2f%%"%(100*e1/y1)  
+        
+        # in Valid
+        pred = sda.predict_functions(Xvalid).argmax(1)
+        # let's see how the network did
+        y = yvalid.argmax(1)
+        e0 = 0.0; y0 = len([0 for yi in range(len(y)) if y[yi]==0])
+        e1 = 0.0; y1 = len([1 for yi in range(len(y)) if y[yi]==1])
+        for i in range(len(y)):
+            if(y[i] == 1):
+                e1 += y[i]==pred[i]
+            if(y[i] == 0):
+                e0 += y[i]==pred[i]
+
+        # printing the result, this structure should result in 80% accuracy
+        print "Valid Accuracy for class 0: %2.2f%%"%(100*e0/y0)
+        print "Valid Accuracy for class 1: %2.2f%%"%(100*e1/y1) 
+        
+        # in Xtest
+        pred = sda.predict_functions(Xtest).argmax(1)
+        # let's see how the network did
+        y = ytest.argmax(1)
+        e0 = 0.0; y0 = len([0 for yi in range(len(y)) if y[yi]==0])
+        e1 = 0.0; y1 = len([1 for yi in range(len(y)) if y[yi]==1])
+        for i in range(len(y)):
+            if(y[i] == 1):
+                e1 += y[i]==pred[i]
+            if(y[i] == 0):
+                e0 += y[i]==pred[i]
+
+        # printing the result, this structure should result in 80% accuracy
+        print "Test Accuracy for class 0: %2.2f%%"%(100*e0/y0)
+        print "Test Accuracy for class 1: %2.2f%%"%(100*e1/y1) 
+            
     
-        return [dfpredata, dfinedata]
+        return [dfpredata, dfinedata, sda, Xtest, ytest, pred]
     
     
  

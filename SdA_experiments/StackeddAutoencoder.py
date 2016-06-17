@@ -177,13 +177,14 @@ class SdA(object):
         # compute the cost for second phase of training,
         # defined as the negative log likelihood
         self.finetune_cost = self.logLayer.negative_log_likelihood(self.y)
+        
         # compute the gradients with respect to the model parameters
         # symbolic variable that points to the number of errors made on the
         # minibatch given by self.x and self.y
         self.errors = self.logLayer.errors(self.y)
         
 
-    def pretraining_functions(self, train_set_x, batch_size):
+    def pretraining_functions(self, train_set_x, np_train_y, batch_size):
         ''' Generates a list of functions, each of them implementing one
         step in trainnig the dA corresponding to the layer with same index.
         The function will require as input the minibatch index, and to train
@@ -206,30 +207,41 @@ class SdA(object):
         index = T.lscalar('index')  # index to a minibatch
         corruption_level = T.scalar('corruption')  # % of corruption to use
         learning_rate = T.scalar('lr')  # learning rate to use
+        
         # begining of a batch, given `index`
-        batch_begin = index * batch_size
+        batch_begin = index * 0
         # ending of a batch given `index`
-        batch_end = batch_begin + batch_size
+        batch_end = batch_begin + 2*batch_size
+    
+        # to randomize balanced minibatches need to find class indices        
+        y0indices = [indy for y,indy in zip(np_train_y, range(len(np_train_y))) if y == 0]
+        y1indices = [indy for y,indy in zip(np_train_y, range(len(np_train_y))) if y == 1]
         
         # organize np_train_sets
         np_train_set_x = train_set_x.get_value(borrow=True).T
         np_train_set_x = np.transpose(np_train_set_x.reshape(4, 900, np_train_set_x.shape[1]))
 
-        # test example patches
-        fig, axes = plt.subplots(ncols=4, nrows=1)
-        axes[0].imshow(np_train_set_x[0,:,0].reshape(30,30), cmap="Greys_r")
-        axes[1].imshow(np_train_set_x[0,:,1].reshape(30,30), cmap="Greys_r")
-        axes[2].imshow(np_train_set_x[0,:,2].reshape(30,30), cmap="Greys_r")
-        axes[3].imshow(np_train_set_x[0,:,3].reshape(30,30), cmap="Greys_r")
-        plt.show() 
-        
-        # substracted
+        # 4 post-contrast time points
         data_x = [np_train_set_x[:,:,0],
-                  np_train_set_x[:,:,1]-np_train_set_x[:,:,0],
-                  np_train_set_x[:,:,2]-np_train_set_x[:,:,1],
-                  np_train_set_x[:,:,3]-np_train_set_x[:,:,2]]                  
+                  np_train_set_x[:,:,1],
+                  np_train_set_x[:,:,2],
+                  np_train_set_x[:,:,3]]
                   
-
+        # test example patches
+        # display original patches
+        fig, axes = plt.subplots(ncols=4, nrows=2)
+        axes[0,0].imshow(np_train_set_x[0,:,0].reshape(30,30), cmap="Greys_r")
+        axes[0,1].imshow(np_train_set_x[0,:,1].reshape(30,30), cmap="Greys_r")
+        axes[0,2].imshow(np_train_set_x[0,:,2].reshape(30,30), cmap="Greys_r")
+        axes[0,3].imshow(np_train_set_x[0,:,3].reshape(30,30), cmap="Greys_r")
+        
+        # display recoded patches
+        axes[1,0].imshow(data_x[0][0,:].reshape(30,30), cmap="Greys_r")
+        axes[1,1].imshow(data_x[1][0,:].reshape(30,30), cmap="Greys_r")
+        axes[1,2].imshow(data_x[2][0,:].reshape(30,30), cmap="Greys_r")
+        axes[1,3].imshow(data_x[3][0,:].reshape(30,30), cmap="Greys_r")
+        plt.show() 
+                  
         pretrain_fns = []
         for dA,kdA in zip(self.dA_layers, range(len(self.dA_layers))):
             print(kdA,dA)
@@ -237,11 +249,19 @@ class SdA(object):
             cost, updates = dA.get_cost_updates(corruption_level,
                                                 learning_rate)
                                                 
-                                                
-            # or tuple data_x, data_y = data_xy        
-            shared_x = theano.shared(np.asarray(data_x[kdA],
+            # return random integers from the discrete uniform distribution in the closed interval [low, high]
+            # If high is None (the default), then results are from [1, low].
+            sy0idx = np.random.randint(0, len(y0indices), batch_size)
+            sy1idx = np.random.randint(0, len(y1indices), batch_size)
+            idxs = list(np.concatenate((sy0idx,sy1idx), axis=0))
+            # extract random balanced minibatch
+            np_x = data_x[kdA][idxs,:]
+            
+            # send to theano var      
+            shared_x = theano.shared(np.asarray(np_x,
                                             dtype=theano.config.floatX),
                                             borrow=True)
+                                            
             # compile the theano function
             fn = theano.function(
                 inputs=[
@@ -285,6 +305,11 @@ class SdA(object):
         (valid_set_x, valid_set_y) = datasets[1]
         (test_set_x, test_set_y) = datasets[2]
         
+        # get labelss to balance minibatches
+        np_train_y = datasets[3][1]
+        np_valid_y = datasets[4][1]
+        np_test_y = datasets[5][1]
+        
         # organize np_train_sets
         np_train_set_x = train_set_x.get_value(borrow=True).T
         np_train_set_x = np.transpose(np_train_set_x.reshape(4, 900, np_train_set_x.shape[1]))
@@ -314,19 +339,51 @@ class SdA(object):
         axes[2,3].imshow(np_test_set_x[0,:,3].reshape(30,30), cmap="Greys_r")
         plt.show() 
         
-        # substracted
+        # extract last time point
         train_data_x = np_train_set_x[:,:,3]
         valid_data_x = np_valid_set_x[:,:,3]
         test_data_x = np_test_set_x[:,:,3]
-                  
+        
+        # to randomize balanced minibatches need to find class indices        
+        y0indices_train = [indy for y,indy in zip(np_train_y, range(len(np_train_y))) if y == 0]
+        y1indices_train = [indy for y,indy in zip(np_train_y, range(len(np_train_y))) if y == 1]
+        y0indices_valid = [indy for y,indy in zip(np_valid_y, range(len(np_valid_y))) if y == 0]
+        y1indices_valid = [indy for y,indy in zip(np_valid_y, range(len(np_valid_y))) if y == 1]
+        y0indices_test = [indy for y,indy in zip(np_test_y, range(len(np_test_y))) if y == 0]
+        y1indices_test = [indy for y,indy in zip(np_test_y, range(len(np_test_y))) if y == 1]
+        
+        
+        # return random integers from the discrete uniform distribution in the closed interval [low, high]
+        # If high is None (the default), then results are from [1, low].
+        sy0idx = np.random.randint(0, len(y0indices_train), batch_size)
+        sy1idx = np.random.randint(0, len(y1indices_train), batch_size)
+        idxs_train = list(np.concatenate((sy0idx,sy1idx), axis=0))
+        # extract random balanced minibatch
+        nptrain_data_x = train_data_x[idxs_train,:]
+        train_set_y = train_set_y[idxs_train]
+        
+        sy0idx = np.random.randint(0, len(y0indices_valid), batch_size)
+        sy1idx = np.random.randint(0, len(y1indices_valid), batch_size)
+        idxs_valid = list(np.concatenate((sy0idx,sy1idx), axis=0))
+        # extract random balanced minibatch
+        npvalid_data_x = valid_data_x[idxs_valid,:]
+        valid_set_y = valid_set_y[idxs_valid]
+        
+        sy0idx = np.random.randint(0, len(y0indices_test), batch_size)
+        sy1idx = np.random.randint(0, len(y1indices_test), batch_size)
+        idxs_test = list(np.concatenate((sy0idx,sy1idx), axis=0))
+        # extract random balanced minibatch
+        nptest_data_x = test_data_x[idxs_test,:]
+        test_set_y = test_set_y[idxs_test]
+        
         # or tuple data_x, data_y = data_xy        
-        train_set_x = theano.shared(np.asarray(train_data_x,
+        train_set_x = theano.shared(np.asarray(nptrain_data_x,
                                             dtype=theano.config.floatX),
                                             borrow=True)                   
-        valid_set_x = theano.shared(np.asarray(valid_data_x,
+        valid_set_x = theano.shared(np.asarray(npvalid_data_x,
                                             dtype=theano.config.floatX),
                                             borrow=True)     
-        test_set_x = theano.shared(np.asarray(test_data_x,
+        test_set_x = theano.shared(np.asarray(nptest_data_x,
                                             dtype=theano.config.floatX),
                                             borrow=True)                                            
                   
@@ -353,10 +410,10 @@ class SdA(object):
             updates=updates,
             givens={
                 self.x: train_set_x[
-                    index * batch_size: (index + 1) * batch_size
+                    index * 0: 2 * batch_size
                 ],
                 self.y: train_set_y[
-                    index * batch_size: (index + 1) * batch_size
+                    index * 0: 2 * batch_size
                 ]
             },
             name='train'
@@ -367,10 +424,10 @@ class SdA(object):
             self.errors,
             givens={
                 self.x: test_set_x[
-                    index * batch_size: (index + 1) * batch_size
+                    index * 0: 2 * batch_size
                 ],
                 self.y: test_set_y[
-                    index * batch_size: (index + 1) * batch_size
+                    index * 0: 2 * batch_size
                 ]
             },
             name='test'
@@ -381,10 +438,10 @@ class SdA(object):
             self.errors,
             givens={
                 self.x: valid_set_x[
-                    index * batch_size: (index + 1) * batch_size
+                    index * 0: 2 * batch_size
                 ],
                 self.y: valid_set_y[
-                    index * batch_size: (index + 1) * batch_size
+                    index * 0: 2 * batch_size
                 ]
             },
             name='valid'
@@ -399,5 +456,36 @@ class SdA(object):
             return [test_score_i(i) for i in range(n_test_batches)]
 
         return train_fn, valid_score, test_score
+        
+        
+    def sigmoid_activate(self, Xtest, W):
+        # code and compute
+        sigmoid_input = Xtest
+        sigmoid_output = np.tanh(np.dot(sigmoid_input, W.get_value(borrow=True) )) 
+        
+        return sigmoid_output 
+        
+    def softmax_activate(self, Xtest, logLayer):
+        # code and compute
+        softmax_input = Xtest
+        v = np.exp(np.dot(softmax_input, logLayer.W.get_value(borrow=True)))
+        softmax_output = v/np.sum(v)
+        
+        return softmax_output
+        
 
+    def predict_functions(self, Xtest):
+        ''' Given a set_x of examples produce a vector y' of predictions  by the sDA.
+        '''
+        tmp = Xtest
+        for L in self.sigmoid_layers:
+            tmp = self.sigmoid_activate( tmp, L.W )
+            
+        # finalize with log layer
+        tmp = self.softmax_activate( tmp, self.logLayer )
+            
+        return tmp
+        
 
+            
+             

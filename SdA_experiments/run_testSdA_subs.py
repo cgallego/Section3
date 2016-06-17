@@ -11,22 +11,22 @@ def run_testSdA_timep():
     # start by importing Deep Learning Funcs
     funcs = DLFuncs_SdA()
     
-    pretraining_epochs = 100
-    pretrain_lr = 0.45
-    batch_size = 500
+    pretraining_epochs = 250
+    pretrain_lr = 0.0095
+    batch_size = 1
     
-    training_epochs = 1000
-    finetune_lr = 0.075    
+    training_epochs = 100
+    finetune_lr = 0.35    
     
-    output_folder = 'SdA_plots_subs'
-    corruption_levels=[0.30, 0.4, 0.50, 0.60]
-    hidden_layers_sizes=[2025,1600,1225,900]
-    hidden_layers_sidelen = [30,45,40,35,30]
+    output_folder = 'SdA_plots_subs_4layers' # 'SdA_plots_subs_3layers'
+    corruption_levels=[0.10] # [0.10, 0.25, 0.50]
+    hidden_layers_sizes= [1600] # [225,324,900]
+    hidden_layers_sidelen = [30,40] # [30,15,18,30]
     
     ############
     # train Stacked dAutoencoder                 
     ############
-    dfpredata, dfinedata = funcs.test_SdA_timep(pretraining_epochs, pretrain_lr, batch_size,
+    dfpredata, dfinedata, sda, Xtest, ytest, pred = funcs.test_SdA_timep(pretraining_epochs, pretrain_lr, batch_size,
                                                 training_epochs, finetune_lr, 
                                                 corruption_levels, 
                                                 hidden_layers_sizes, hidden_layers_sidelen, output_folder)
