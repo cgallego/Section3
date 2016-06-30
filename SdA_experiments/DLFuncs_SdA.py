@@ -466,29 +466,29 @@ class DLFuncs_SdA(object):
                 # check that Cost does not improve more than 1% on the training set after an epoch 
                 meanc.append( np.mean(c) )
                 if (epoch > 50):
-                    decrCost = (meanc[epoch-1] - meanc[epoch])/meanc[epoch]*100
-                    if(decrCost <= 0.1):
+                    decrCost = abs(meanc[epoch-1] - meanc[epoch])/meanc[epoch]*100
+                    if(decrCost <= 0.01):
                         break
     
-            #####################################
-            # Plot images in 2D
-            #####################################   
-            Xtmp = sda.dA_layers[i].W.get_value(borrow=True).T
-            imgX = Xtmp.reshape( Xtmp.shape[0], hidden_layers_sidelen[i], hidden_layers_sidelen[i])
-            image = Image.fromarray(
-                tile_raster_images(X=imgX , img_shape=(hidden_layers_sidelen[i], hidden_layers_sidelen[i]), 
-                                   tile_shape=(10, 10),
-                                   tile_spacing=(1, 1)))
+        #####################################
+        # Plot images in 2D
+        #####################################   
+        Xtmp = sda.dA_layers[0].W.get_value(borrow=True).T
+        imgX = Xtmp.reshape( Xtmp.shape[0], 30, 30)
+        image = Image.fromarray(
+            tile_raster_images(X=imgX , img_shape=(30, 30), 
+                               tile_shape=(10, 10),
+                               tile_spacing=(1, 1)))
 
-            #show and save                     
-            image.save('filters_corruption_layer_'+str(i)+'_'+str(float(corruption_levels[i]))+'.png')
-            # prepare display    
-            fig, ax = plt.subplots()  
-            ax.imshow(image,  cmap="Greys_r")
-            ax.axes.get_xaxis().set_visible(False)
-            ax.axes.get_yaxis().set_visible(False)
+        # prepare display    
+        fig, ax = plt.subplots()  
+        ax.imshow(image,  cmap="Greys_r")
+        ax.axes.get_xaxis().set_visible(False)
+        ax.axes.get_yaxis().set_visible(False)
+        #show and save                     
+        image.save('filters0_layers_'+str(sda.n_layers)+'_nhidden_'+str(hidden_layers_sizes[0])+'_epochs_'+str(epoch)+'.pdf')
             
-        os.chdir('../../')
+        os.chdir('../')
         
         end_time = timeit.default_timer()
         print(('The pretraining code for file ' +
@@ -642,55 +642,64 @@ class DLFuncs_SdA(object):
         # predicting using the SDA
         ###############
         # in train
-        pred = sda.predict_functions(Xtrain).argmax(1)
+        predtrain = sda.predict_functions(Xtrain).argmax(1)
         # let's see how the network did
         y = ytrain.argmax(1)
         e0 = 0.0; y0 = len([0 for yi in range(len(y)) if y[yi]==0])
         e1 = 0.0; y1 = len([1 for yi in range(len(y)) if y[yi]==1])
         for i in range(len(y)):
             if(y[i] == 1):
-                e1 += y[i]==pred[i]
+                e1 += y[i]==predtrain[i]
             if(y[i] == 0):
-                e0 += y[i]==pred[i]
+                e0 += y[i]==predtrain[i]
 
         # printing the result, this structure should result in 80% accuracy
-        print "Train Accuracy for class 0: %2.2f%%"%(100*e0/y0)
-        print "Train Accuracy for class 1: %2.2f%%"%(100*e1/y1)  
+        Acutrain0=100*e0/y0
+        Acutrain1=100*e1/y1
+        print "Train Accuracy for class 0: %2.2f%%"%(Acutrain0)
+        print "Train Accuracy for class 1: %2.2f%%"%(Acutrain1)  
         
         # in Valid
-        pred = sda.predict_functions(Xvalid).argmax(1)
+        predvalid = sda.predict_functions(Xvalid).argmax(1)
         # let's see how the network did
         y = yvalid.argmax(1)
         e0 = 0.0; y0 = len([0 for yi in range(len(y)) if y[yi]==0])
         e1 = 0.0; y1 = len([1 for yi in range(len(y)) if y[yi]==1])
         for i in range(len(y)):
             if(y[i] == 1):
-                e1 += y[i]==pred[i]
+                e1 += y[i]==predvalid[i]
             if(y[i] == 0):
-                e0 += y[i]==pred[i]
+                e0 += y[i]==predvalid[i]
 
         # printing the result, this structure should result in 80% accuracy
-        print "Valid Accuracy for class 0: %2.2f%%"%(100*e0/y0)
-        print "Valid Accuracy for class 1: %2.2f%%"%(100*e1/y1) 
+        Acuvalid0=100*e0/y0
+        Acuvalid1=100*e1/y1
+        print "Valid Accuracy for class 0: %2.2f%%"%(Acuvalid0)
+        print "Valid Accuracy for class 1: %2.2f%%"%(Acuvalid1) 
         
         # in Xtest
-        pred = sda.predict_functions(Xtest).argmax(1)
+        predtest = sda.predict_functions(Xtest).argmax(1)
         # let's see how the network did
         y = ytest.argmax(1)
         e0 = 0.0; y0 = len([0 for yi in range(len(y)) if y[yi]==0])
         e1 = 0.0; y1 = len([1 for yi in range(len(y)) if y[yi]==1])
         for i in range(len(y)):
             if(y[i] == 1):
-                e1 += y[i]==pred[i]
+                e1 += y[i]==predtest[i]
             if(y[i] == 0):
-                e0 += y[i]==pred[i]
+                e0 += y[i]==predtest[i]
 
         # printing the result, this structure should result in 80% accuracy
-        print "Test Accuracy for class 0: %2.2f%%"%(100*e0/y0)
-        print "Test Accuracy for class 1: %2.2f%%"%(100*e1/y1) 
+        Acutest0=100*e0/y0
+        Acutest1=100*e1/y1
+        print "Test Accuracy for class 0: %2.2f%%"%(Acutest0)
+        print "Test Accuracy for class 1: %2.2f%%"%(Acutest1) 
             
     
-        return [dfpredata, dfinedata, sda, Xtest, ytest, pred]
+        return [dfpredata, dfinedata, sda, 
+                Acutrain0, Acutrain1,
+                Acuvalid0, Acuvalid1,
+                Acutest0, Acutest1]
     
     
  

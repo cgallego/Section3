@@ -5,16 +5,13 @@ null = lambda x: 0
 identity = lambda x: x
 
 class BaseLayer():
-    def backwardPass(self, y, dA_avg_costs, dA_iter):
+    def backwardPass(self, y, dA_avg_costs):
         gradient = self.output - y + self.w_constraint(self.W)
    
-        if( numpy.mod(self.epoch,499) == 0 ):   
-            # append      
-            dA_avg_costs.append( numpy.mean((y - self.output)**2) )
-            dA_iter.append(self.epoch)        
-            print('Pre-training idk %i, error %f' % (self.epoch, numpy.mean((y - self.output)**2) ))    
+        # append      
+        dA_avg_costs.append( numpy.mean((y - self.output)**2) )
 
-        return gradient, dA_avg_costs, dA_iter
+        return gradient, dA_avg_costs
         
     def update(self, transfer):
         gradient =  transfer * self.gradOutput

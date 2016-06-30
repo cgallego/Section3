@@ -6,9 +6,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 class Trainer():
-    def train(self, layers, X, y, dA_avg_costs, dA_iter, n_iters=1):
+    def train(self, layers, X, y, dA_avg_costs, dA_iter, epochs):
         rows = numpy.arange(X.shape[0])
-        for iters in range(n_iters):
+        ## stochastic sampler in n_iterations
+        for iters in range(epochs):
             numpy.random.shuffle(rows)
             for idx in rows:
                 tmp = X[[idx]]
@@ -25,7 +26,7 @@ class StackedDA():
         self.alpha = alpha
         self.structure = structure
         self.Layers = []
-        print "Call \"pre_train(n_iters)\""
+        print "Call \"pre_train(epochs)\""
         
     def __repr__(self):
         return "\nStacked Denoising Autoencoder Structure:\t%s"%(" -> ".join([str(x) for x in self.structure]))
@@ -37,7 +38,7 @@ class StackedDA():
         print "Pre-training: "#, self.__repr__()
         for i in range(len(self.structure) - 1):
             print "Layer: %dx%d"%( self.structure[i], self.structure[i+1])
-            s1 = Layers.SigmoidLayer(self.structure[i], self.structure[i+1], noise=Noise.SaltAndPepper(noise_rate))
+            s1 = Layers.SigmoidLayer(self.structure[i], self.structure[i+1], noise=Noise.GaussianNoise(noise_rate))
             s2 = Layers.SigmoidLayer(self.structure[i+1], self.X.shape[1])
 
             #########################

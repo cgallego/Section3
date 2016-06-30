@@ -211,7 +211,7 @@ class SdA(object):
         # begining of a batch, given `index`
         batch_begin = index * 0
         # ending of a batch given `index`
-        batch_end = batch_begin + 2*batch_size
+        batch_end = batch_begin + batch_size
     
         # to randomize balanced minibatches need to find class indices        
         y0indices = [indy for y,indy in zip(np_train_y, range(len(np_train_y))) if y == 0]
@@ -410,10 +410,10 @@ class SdA(object):
             updates=updates,
             givens={
                 self.x: train_set_x[
-                    index * 0: 2 * batch_size
+                    index * 0:  batch_size
                 ],
                 self.y: train_set_y[
-                    index * 0: 2 * batch_size
+                    index * 0:  batch_size
                 ]
             },
             name='train'
@@ -424,10 +424,10 @@ class SdA(object):
             self.errors,
             givens={
                 self.x: test_set_x[
-                    index * 0: 2 * batch_size
+                    index * 0: batch_size
                 ],
                 self.y: test_set_y[
-                    index * 0: 2 * batch_size
+                    index * 0: batch_size
                 ]
             },
             name='test'
@@ -438,10 +438,10 @@ class SdA(object):
             self.errors,
             givens={
                 self.x: valid_set_x[
-                    index * 0: 2 * batch_size
+                    index * 0: batch_size
                 ],
                 self.y: valid_set_y[
-                    index * 0: 2 * batch_size
+                    index * 0: batch_size
                 ]
             },
             name='valid'
