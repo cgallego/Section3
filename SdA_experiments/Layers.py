@@ -7,7 +7,6 @@ identity = lambda x: x
 class BaseLayer():
     def backwardPass(self, y, dA_avg_costs):
         gradient = self.output - y + self.w_constraint(self.W)
-   
         # append      
         dA_avg_costs.append( numpy.mean((y - self.output)**2) )
 

@@ -226,36 +226,38 @@ class SdA(object):
                   np_train_set_x[:,:,1],
                   np_train_set_x[:,:,2],
                   np_train_set_x[:,:,3]]
-                  
+                                    
         # test example patches
         # display original patches
-        fig, axes = plt.subplots(ncols=4, nrows=2)
-        axes[0,0].imshow(np_train_set_x[0,:,0].reshape(30,30), cmap="Greys_r")
-        axes[0,1].imshow(np_train_set_x[0,:,1].reshape(30,30), cmap="Greys_r")
-        axes[0,2].imshow(np_train_set_x[0,:,2].reshape(30,30), cmap="Greys_r")
-        axes[0,3].imshow(np_train_set_x[0,:,3].reshape(30,30), cmap="Greys_r")
-        
-        # display recoded patches
-        axes[1,0].imshow(data_x[0][0,:].reshape(30,30), cmap="Greys_r")
-        axes[1,1].imshow(data_x[1][0,:].reshape(30,30), cmap="Greys_r")
-        axes[1,2].imshow(data_x[2][0,:].reshape(30,30), cmap="Greys_r")
-        axes[1,3].imshow(data_x[3][0,:].reshape(30,30), cmap="Greys_r")
-        plt.show() 
+#        fig, axes = plt.subplots(ncols=4, nrows=2)
+#        axes[0,0].imshow(np_train_set_x[0,:,0].reshape(30,30), cmap="Greys_r")
+#        axes[0,1].imshow(np_train_set_x[0,:,1].reshape(30,30), cmap="Greys_r")
+#        axes[0,2].imshow(np_train_set_x[0,:,2].reshape(30,30), cmap="Greys_r")
+#        axes[0,3].imshow(np_train_set_x[0,:,3].reshape(30,30), cmap="Greys_r")
+#        
+#        # display recoded patches
+#        axes[1,0].imshow(data_x[0][0,:].reshape(30,30), cmap="Greys_r")
+#        axes[1,1].imshow(data_x[1][0,:].reshape(30,30), cmap="Greys_r")
+#        axes[1,2].imshow(data_x[2][0,:].reshape(30,30), cmap="Greys_r")
+#        axes[1,3].imshow(data_x[3][0,:].reshape(30,30), cmap="Greys_r")
+#        plt.show() 
                   
         pretrain_fns = []
-        for dA,kdA in zip(self.dA_layers, range(len(self.dA_layers))):
-            print(kdA,dA)
+        for dAuto,kdA in zip(self.dA_layers, range(len(self.dA_layers))):
+            print(kdA,dAuto)
             # get the cost and the updates list
-            cost, updates = dA.get_cost_updates(corruption_level,
+            cost, updates = dAuto.get_cost_updates(corruption_level,
                                                 learning_rate)
                                                 
             # return random integers from the discrete uniform distribution in the closed interval [low, high]
             # If high is None (the default), then results are from [1, low].
-            sy0idx = np.random.randint(0, len(y0indices), batch_size)
-            sy1idx = np.random.randint(0, len(y1indices), batch_size)
+            sy0idx = np.random.randint(0, len(y0indices), batch_size/2)
+            sy1idx = np.random.randint(0, len(y1indices), batch_size/2)
+            
             idxs = list(np.concatenate((sy0idx,sy1idx), axis=0))
+
             # extract random balanced minibatch
-            np_x = data_x[kdA][idxs,:]
+            np_x = data_x[kdA][idxs,:,]
             
             # send to theano var      
             shared_x = theano.shared(np.asarray(np_x,
@@ -278,8 +280,8 @@ class SdA(object):
             # append `fn` to the list of functions
             pretrain_fns.append(fn)
 
-        return pretrain_fns
-        
+        return pretrain_fns        
+
 
     def build_finetune_functions(self, datasets, batch_size, learning_rate):
         '''Generates a function `train` that implements one step of
@@ -305,6 +307,10 @@ class SdA(object):
         (valid_set_x, valid_set_y) = datasets[1]
         (test_set_x, test_set_y) = datasets[2]
         
+        n_valid_batches = valid_set_x.get_value(borrow=True).shape[0]
+        n_test_batches = test_set_x.get_value(borrow=True).shape[0]
+
+
         # get labelss to balance minibatches
         np_train_y = datasets[3][1]
         np_valid_y = datasets[4][1]
@@ -352,6 +358,7 @@ class SdA(object):
         y0indices_test = [indy for y,indy in zip(np_test_y, range(len(np_test_y))) if y == 0]
         y1indices_test = [indy for y,indy in zip(np_test_y, range(len(np_test_y))) if y == 1]
         
+        batch_size = 1
         
         # return random integers from the discrete uniform distribution in the closed interval [low, high]
         # If high is None (the default), then results are from [1, low].
@@ -388,9 +395,8 @@ class SdA(object):
                                             borrow=True)                                            
                   
         # compute number of minibatches for training, validation and testing
-        n_valid_batches = valid_set_x.get_value(borrow=True).shape[0]
+        batch_size = 2       
         n_valid_batches //= batch_size
-        n_test_batches = test_set_x.get_value(borrow=True).shape[0]
         n_test_batches //= batch_size
 
         index = T.lscalar('index')  # index to a [mini]batch
@@ -410,15 +416,15 @@ class SdA(object):
             updates=updates,
             givens={
                 self.x: train_set_x[
-                    index * 0:  batch_size
+                    index * 0: batch_size
                 ],
                 self.y: train_set_y[
-                    index * 0:  batch_size
+                    index * 0: batch_size
                 ]
             },
             name='train'
         )
-
+        
         test_score_i = theano.function(
             [index],
             self.errors,
@@ -432,13 +438,13 @@ class SdA(object):
             },
             name='test'
         )
-
+        
         valid_score_i = theano.function(
             [index],
             self.errors,
             givens={
                 self.x: valid_set_x[
-                    index * 0: batch_size
+                    index * 0:  batch_size
                 ],
                 self.y: valid_set_y[
                     index * 0: batch_size
@@ -461,14 +467,14 @@ class SdA(object):
     def sigmoid_activate(self, Xtest, W):
         # code and compute
         sigmoid_input = Xtest
-        sigmoid_output = np.tanh(np.dot(sigmoid_input, W.get_value(borrow=True) )) 
+        sigmoid_output = np.tanh(np.dot(sigmoid_input, 0.8*W.get_value(borrow=True) )) 
         
         return sigmoid_output 
         
     def softmax_activate(self, Xtest, logLayer):
         # code and compute
         softmax_input = Xtest
-        v = np.exp(np.dot(softmax_input, logLayer.W.get_value(borrow=True)))
+        v = np.exp(np.dot(softmax_input, 0.8*logLayer.W.get_value(borrow=True)))
         softmax_output = v/np.sum(v)
         
         return softmax_output

@@ -17,21 +17,20 @@ def run_testSdA_timep():
     # start by importing Deep Learning Funcs
     funcs = DLFuncs_SdA()
     
-    pretraining_epochs = 500
-    training_epochs = 100
-    finetune_lr = 0.25    
+    pretraining_epochs = 100
+    training_epochs = 50
+    finetune_lr = 0.9   
     output_folder = 'finaltheanoSdA' # 'SdA_plots_subs_3layers'
     
     ############
     ### Define grid search parameters
     ############
-    pretrain_lr = [0.0001,0.001,0.01,0.1]
-    noise_levels =[0.20,0.40] # [0.10, 0.25, 0.50]
-    nlayers = [1,2,3]
-    hidden_layers_sizes = [225,400,900,1600]  # [225,324,900]
-    hidden_layers_sidelen = [15,20,30,40] # [30,15,18,30]
+    pretrain_lr = [0.01,0.1,0.25]
+    noise_levels =[0.35] # [0.10, 0.25, 0.50]
+    nlayers = [1,2,3,4]
+    hidden_layers_sizes = [225,400,900,100]  # [225,324,900]
+    hidden_layers_sidelen = [15,20,30,10] # [30,15,18,30]
     batch_sizes = [1000,500,100,10]
-    
     k=0
     BestAveAccuracy = 0
     
@@ -39,7 +38,7 @@ def run_testSdA_timep():
     ## Process Resuts
     ###########
     #dfresults = pd.DataFrame() # when first time
-    pkl_filegridS = open(output_folder+'/gridSearch_results.pkl','rb')
+    pkl_filegridS = open(output_folder+'/gridSearch_results3.pkl','rb')
     dfresults = pickle.load(pkl_filegridS)
     print dfresults
     #items = itertools.product(nlayers, hidden_layers_sizes, noise_levels, pretrain_lr, batch_sizes)
@@ -49,13 +48,15 @@ def run_testSdA_timep():
         k+=1
         print(k,item)
         
-        if(k>55): #k-1
+        if(k>128): #k-1 195
+            #break
             # setup the training functions
             nlayer = item[0]
             nhidden = item[1]
             sidelen = hidden_layers_sidelen[ hidden_layers_sizes.index(nhidden) ]
             noiserate = item[2]
             pretrain_lr = item[3]
+            finetune_lr = pretrain_lr*0.9
             batch_size = item[4]
             if(nlayer == 1):
                 StackedDA_layers = [nhidden]
@@ -69,15 +70,31 @@ def run_testSdA_timep():
                 StackedDA_layers = [nhidden,nhidden,nhidden]
                 corruption_levels = [noiserate,noiserate,noiserate]
                 hidden_sidelen = [sidelen,sidelen,sidelen]
+            if(nlayer == 4):
+                StackedDA_layers = [nhidden,nhidden,nhidden,nhidden]
+                corruption_levels = [noiserate,noiserate,noiserate,noiserate]
+                hidden_sidelen = [sidelen,sidelen,sidelen,sidelen]
                     
             ############
             # train Stacked dAutoencoder                 
             ############
-            dfpredata, dfinedata, sda, Acutrain0, Acutrain1, Acuvalid0, Acuvalid1, Acutest0, Acutest1 = funcs.test_SdA_timep(pretraining_epochs, 
+            dfpredata, dfinedata, imagefilters, sda, Acutrain0, Acutrain1, Acuvalid0, Acuvalid1, Acutest0, Acutest1 = funcs.test_SdA_timep(pretraining_epochs, 
                                                         pretrain_lr, batch_size,
                                                         training_epochs, finetune_lr, 
                                                         corruption_levels, 
                                                         StackedDA_layers, hidden_sidelen, output_folder)
+                                                        
+            ############                                         
+            # prepare display    
+            ############                                                                                                 
+            fig, ax = plt.subplots()  
+            ax.imshow(imagefilters,  cmap="Greys_r")
+            ax.axes.get_xaxis().set_visible(False)
+            ax.axes.get_yaxis().set_visible(False)
+            #show and save                     
+            imagefilters.save(output_folder+'/filters0_layers_'+str(item)+'.pdf')
+                
+                                   
             ############
             ### plotting or cost
             ### the cost we minimize during training is the negative log likelihood of
@@ -122,7 +139,7 @@ def run_testSdA_timep():
             if( AveAccuracy > BestAveAccuracy):
                 bestsDA = sda
                 BestAveAccuracy = AveAccuracy
-                print("best Accuracy = %d, for SdA:" % AveAccuracy)
+                print("best Accuracy = %d, for SdA:" % BestAveAccuracy)
                 print(bestsDA)
                 
                 #####################################
@@ -132,7 +149,7 @@ def run_testSdA_timep():
                     pickle.dump(bestsDA, fp)
             
             # save the best model
-            with open('finaltheanoSdA/gridSearch_results.pkl', 'wb') as f:
+            with open('finaltheanoSdA/gridSearch_results3.pkl', 'wb') as f:
                 pickle.dump(dfresults, f)
             
     ### continue
@@ -154,6 +171,6 @@ if __name__ == '__main__':
     ## Process Resuts
     ###########
     import six.moves.cPickle as pickle
-    pkl_filegridS = open('finaltheanoSdA/gridSearch_results.pkl','rb')
+    pkl_filegridS = open('finaltheanoSdA/gridSearch_results3.pkl','rb')
     dfresults = pickle.load(pkl_filegridS)
     print dfresults

@@ -37,6 +37,7 @@ import numpy
 
 import theano
 import theano.tensor as T
+from theano.tensor.shared_randomstreams import RandomStreams
 
 from LogisticRegression import *
 
@@ -107,10 +108,15 @@ class HiddenLayer(object):
         self.b = b
 
         lin_output = T.dot(input, self.W) + self.b
-        self.output = (
-            lin_output if activation is None
-            else activation(lin_output)
-        )
+        if activation is None:
+            self.output = lin_output 
+        else:
+            hidden1 = activation(lin_output)
+            # Implement dropout
+            srng = RandomStreams(seed=12345)
+            hidden1 = T.switch(srng.binomial(size=[n_out],p=0.8),hidden1,0)
+            self.output = hidden1
+        
         # parameters of the model
         self.params = [self.W, self.b]
 

@@ -136,9 +136,9 @@ class DLFuncs_SdA(object):
         uids = np.unique(labels['lesion_id'])
         randuids = self.randomList(list(uids))
         
-        lentrain = int(round(len(randuids)*0.6))
-        lenvalid = int(round(len(randuids)*0.2))
-        lentest = int(round(len(randuids)*0.2))
+        lentrain = int(round(len(randuids)*0.8))
+        lenvalid = int(round(len(randuids)*0.1))
+        lentest = int(round(len(randuids)*0.1))
         
         # split ids based on random choice in 60% train, 20% valid and 20% test
         idstrain = [randuids[i] for i in range(lentrain)]
@@ -147,9 +147,9 @@ class DLFuncs_SdA(object):
         
         
         randuidsU = self.randomList(list(range(len(Udatasets))))
-        lentrainU = int(round(len(randuidsU)*0.6))
-        lenvalidU = int(round(len(randuidsU)*0.2))
-        lentestU = int(round(len(randuidsU)*0.2))
+        lentrainU = int(round(len(randuidsU)*0.8))
+        lenvalidU = int(round(len(randuidsU)*0.1))
+        lentestU = int(round(len(randuidsU)*0.1))
         
         # split ids based on random choice in 60% train, 20% valid and 20% test
         inxstrain = randuidsU[0:lentrainU]
@@ -276,9 +276,9 @@ class DLFuncs_SdA(object):
         uids = np.unique(labels['lesion_id'])
         randuids = self.randomList(list(uids))
         
-        lentrain = int(round(len(randuids)*0.6))
-        lenvalid = int(round(len(randuids)*0.2))
-        lentest = int(round(len(randuids)*0.2))
+        lentrain = int(round(len(randuids)*0.8))
+        lenvalid = int(round(len(randuids)*0.1))
+        lentest = int(round(len(randuids)*0.1))
         
         # split ids based on random choice in 60% train, 20% valid and 20% test
         idstrain = [randuids[i] for i in range(lentrain)]
@@ -419,7 +419,6 @@ class DLFuncs_SdA(object):
         
         if not os.path.isdir(output_folder):
             os.makedirs(output_folder)
-        os.chdir(output_folder)
         
         # construct the stacked denoising autoencoder class
         sda = SdA(
@@ -465,7 +464,7 @@ class DLFuncs_SdA(object):
                 
                 # check that Cost does not improve more than 1% on the training set after an epoch 
                 meanc.append( np.mean(c) )
-                if (epoch > 50):
+                if (epoch > 100):
                     decrCost = abs(meanc[epoch-1] - meanc[epoch])/meanc[epoch]*100
                     if(decrCost <= 0.01):
                         break
@@ -474,21 +473,11 @@ class DLFuncs_SdA(object):
         # Plot images in 2D
         #####################################   
         Xtmp = sda.dA_layers[0].W.get_value(borrow=True).T
-        imgX = Xtmp.reshape( Xtmp.shape[0], 30, 30)
+        #imgX = Xtmp.reshape( Xtmp.shape[0], 30, 30)
         image = Image.fromarray(
-            tile_raster_images(X=imgX , img_shape=(30, 30), 
+            tile_raster_images(X=Xtmp , img_shape=(30, 30), 
                                tile_shape=(10, 10),
                                tile_spacing=(1, 1)))
-
-        # prepare display    
-        fig, ax = plt.subplots()  
-        ax.imshow(image,  cmap="Greys_r")
-        ax.axes.get_xaxis().set_visible(False)
-        ax.axes.get_yaxis().set_visible(False)
-        #show and save                     
-        image.save('filters0_layers_'+str(sda.n_layers)+'_nhidden_'+str(hidden_layers_sizes[0])+'_epochs_'+str(epoch)+'.pdf')
-            
-        os.chdir('../')
         
         end_time = timeit.default_timer()
         print(('The pretraining code for file ' +
@@ -511,6 +500,11 @@ class DLFuncs_SdA(object):
         ########################
         # FINETUNING THE MODEL #
         ########################
+        # for fine tunning make minibatch size = 1
+        # compute number of minibatches for training, validation and testing
+        #batch_size = 4
+        #n_train_batches = train_set_x.get_value(borrow=True).shape[0]//4
+        
         # get the training, validation and testing function for the model
         print('... getting the finetuning functions')
         train_fn, validate_model, test_model = sda.build_finetune_functions(
@@ -528,7 +522,7 @@ class DLFuncs_SdA(object):
         minibatch_loss = []
         
         # early-stopping parameters
-        patience = 100 * n_train_batches  # look as this many examples regardless
+        patience = 1000 * n_train_batches  # look as this many examples regardless
         patience_increase = 2.  # wait this much longer when a new best is
                                 # found
         improvement_threshold = 0.995  # a relative improvement of this much is
@@ -617,7 +611,6 @@ class DLFuncs_SdA(object):
         ## Predictions
         ###############
         # get training data in numpy format   
-        # get training data in numpy format   
         X,y = datasets[3]
         Xtrain = np.asarray(X)
         # extract one img
@@ -696,7 +689,7 @@ class DLFuncs_SdA(object):
         print "Test Accuracy for class 1: %2.2f%%"%(Acutest1) 
             
     
-        return [dfpredata, dfinedata, sda, 
+        return [dfpredata, dfinedata, image, sda, 
                 Acutrain0, Acutrain1,
                 Acuvalid0, Acuvalid1,
                 Acutest0, Acutest1]

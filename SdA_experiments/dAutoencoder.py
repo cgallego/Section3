@@ -215,14 +215,29 @@ class dA(object):
 
     def get_hidden_values(self, input):
         """ Computes the values of the hidden layer """
-        return T.nnet.sigmoid(T.dot(input, self.W) + self.b)
+        
+        # Implement dropout
+        # The approach I use is to sample a vector of the same size as the hidden layer from a binomial distribution 
+        # with a probability of 0.5. What happens when you then multiply this with the reLUs is that it randomly sets half 
+        # of the outputs to 0, sort of like a random mask, which is what we need for dropout. When the gradient is calculated, 
+        # since the values are not fed forward to the output layer, there is no error for the unit to be back propagated, 
+        # and everything works as it should.
+        srng = RandomStreams(seed=12345)
+        self.Wdropout = T.switch(srng.binomial(size=[self.n_hidden], p=0.8), self.W , 0)
+        
+        hidden1 = T.nnet.sigmoid(T.dot(input, self.Wdropout) + self.b)
+        #hidden1 = hidden1 * (hidden1 > 0) # has effect of setting negative values to 0.
+    
+        return hidden1
 
     def get_reconstructed_input(self, hidden):
         """Computes the reconstructed input given the values of the
         hidden layer
 
         """
-        return T.nnet.sigmoid(T.dot(hidden, self.W_prime) + self.b_prime)
+        visible1 = T.nnet.sigmoid(T.dot(hidden, self.W_prime) + self.b_prime)
+
+        return visible1
 
 
     def get_cost_updates(self, corruption_level, learning_rate):

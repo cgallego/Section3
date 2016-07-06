@@ -61,20 +61,19 @@ def SdA_gridsearch():
     for p in g.patches:
         height = p.get_height()
         g.text(p.get_x(), height+ 3, '%1.2f'%(height))
-    show()
     fig = g.get_figure()
     fig.savefig('grid_searchResults/datasets.png')
 
     ############
     ### Define grid search parameters
     ############
-    nlayers = [1,2,3]
-    nhiddens = [400,625,900,1600,225]
-    hidden_layers_sidelen = [20,25,30,40,15]
-    nnoise_rate = [0.20,0.30,0.50]
-    nalpha = [0.0001,0.001,0.01,0.1]
+    nlayers = [1,2,3,4]
+    nhiddens = [100,225,400,900]
+    hidden_layers_sidelen = [10,15,20,30] 
+    nnoise_rate = [0.35]
+    nalpha = [0.01,0.1,0.5] 
+    batch_size = [500,100,10]
     # note batch_size is fixed to 1 and epochs is fixed to 25
-    
     k=0
     BestAveAccuracy = 0
     #dfresults = pd.DataFrame()# when first time
@@ -82,21 +81,24 @@ def SdA_gridsearch():
     ###########
     ## Process Resuts
     ###########
-    pkl_filegridS = open('grid_searchResults/gridSearch_results.pkl','rb')
+    pkl_filegridS = open('grid_searchResults/gridSearch_results2.pkl','rb')
     dfresults = pickle.load(pkl_filegridS)
     print dfresults
-    #items = itertools.product(nlayers, nhiddens, nnoise_rate, nalpha)
+    #items = itertools.product(nlayers, nhiddens, nnoise_rate, nalpha, batch_size)
+    #item=items.next()
     
-    for item in itertools.product(nlayers, nhiddens, nnoise_rate, nalpha): 
+    for item in itertools.product(nlayers, nhiddens, nnoise_rate, nalpha, batch_size): 
+        k+=1
         print(k,item)
         
-        if(k>51):
+        if(k>90):
             # setup the training functions
             nlayer = item[0]
             nhidden = item[1]
             sidelen = hidden_layers_sidelen[ nhiddens.index(nhidden) ]
             noiseRate = item[2]
             alpha = item[3]
+            batchS = item[4]
             if(nlayer == 1):
                 StackedDA_layers = [nhidden]
             if(nlayer == 2):
@@ -105,23 +107,23 @@ def SdA_gridsearch():
                 StackedDA_layers = [nhidden,nhidden,nhidden]
                 
             # building the SDA
-            sDA = StackedDA(StackedDA_layers, alpha)
+            sDA = StackedDA(StackedDA_layers, alpha, item)
             
             # pre-trainning the SDA
-            sDA.pre_train(Xtrain, noise_rate=noiseRate, epochs=20)
+            sDA.pre_train(Xtrain, noise_rate=noiseRate, epochs=200, batchsize=batchS)
             
             #####################################
             # saving a PNG representation of the first layer
             #####################################
             # Plot images in 2D       
-            W0 = sDA.Layers[0].W.T[:, 1:].T
+            W0 = sDA.Layers[0].W.T[:, 1:]
             imageW0 = Image.fromarray(
-                utils.tile_raster_images(X=W0 , img_shape=(sidelen, sidelen), 
+                utils.tile_raster_images(X=W0 , img_shape=(30, 30), 
                                    tile_shape=(10, 10),
                                    tile_spacing=(1, 1)))
         
             #show and save                     
-            imageW0.save('grid_searchResults/filters_hidden_1stlayer_'+str(StackedDA_layers)+'_'+str(float(noiseRate))+'_itergridS_'+str(k)+'.png')
+            imageW0.save('grid_searchResults/filters_hidden_1stlayer_'+str(item)+'.png')
             # prepare display    
             fig, ax = plt.subplots()  
             ax.imshow(imageW0,  cmap="Greys_r")
@@ -132,10 +134,10 @@ def SdA_gridsearch():
             #utils2.saveTiles(W, img_shape= (30,30), tile_shape=(20,10), filename='grid_searchResults/'+'.png")
         
             # adding the final layer
-            sDA.finalLayer(Xtrain, ytrain, n_neurons=900, epochs=5)
+            sDA.finalLayer(Xtrain, ytrain, epochs=20)
         
             # trainning the whole network
-            sDA.fine_tune(Xtrain, ytrain, epochs=5)
+            sDA.fine_tune(Xtrain, ytrain, epochs=20)
         
             # predicting using the SDA
             pred = sDA.predict(Xvalid).argmax(1)
@@ -146,7 +148,7 @@ def SdA_gridsearch():
             e1 = 0.0; y1 = len([1 for yi in range(len(y)) if y[yi]==1])
             for i in range(len(y)):
                 if(y[i] == 1):
-                    print(y[i]==pred[i], y[i])
+                    #print(y[i]==pred[i], y[i])
                     e1 += y[i]==pred[i]
                 if(y[i] == 0):
                     #print(y[i]==pred[i], y[i])
@@ -161,7 +163,7 @@ def SdA_gridsearch():
             accuracy1 = 100*e1/y1
             itemresults = item + (accuracy0, accuracy1)
             dSresultsiter =  pd.DataFrame(data=np.array(itemresults)).T
-            dSresultsiter.columns=['nlayers', 'nhiddens', 'nnoise_rate', 'nalpha', 'accuracy0','accuracy1']
+            dSresultsiter.columns=['nlayers', 'nhiddens', 'nnoise_rate', 'nalpha', 'batchsize', 'accuracy0','accuracy1']
                   
             dfresults = dfresults.append(dSresultsiter)      
             AveAccuracy = (accuracy0 + accuracy1)/2
@@ -173,11 +175,10 @@ def SdA_gridsearch():
                 print(bestsDA)
                 
             # save the best model
-            with open('grid_searchResults/gridSearch_results.pkl', 'wb') as f:
+            with open('grid_searchResults/gridSearch_results2.pkl', 'wb') as f:
                 pickle.dump(dfresults, f)
             
         ### continue
-        k+=1
         print(dfresults)
 
     return 
@@ -190,7 +191,7 @@ if __name__ == '__main__':
     ###########
     ## Process Resuts
     ###########
-    pkl_filegridS = open('grid_searchResults/gridSearch_results.pkl','rb')
+    pkl_filegridS = open('grid_searchResults/gridSearch_results2.pkl','rb')
     dfresults = pickle.load(pkl_filegridS)
     print dfresults
     
